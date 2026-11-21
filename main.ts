@@ -11,9 +11,13 @@
 // deterministic by construction, so this entrypoint does exactly
 // that: it writes the poster to <output>/entry.png, where <output>
 // is $MAKEFUN_OUTPUT_DIR when set (local runs) and /output
-// otherwise (the grader's container).
+// otherwise (the grader's container). After the copy it verifies the
+// output byte-for-byte against the source poster, so a partial or
+// truncated write fails loudly instead of silently handing the
+// grader a broken image.
 
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,4 +25,13 @@ const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
 mkdirSync(outputDir, { recursive: true });
 
 const here = dirname(fileURLToPath(import.meta.url));
-copyFileSync(join(here, "entry.png"), join(outputDir, "entry.png"));
+const source = join(here, "entry.png");
+const target = join(outputDir, "entry.png");
+copyFileSync(source, target);
+
+const sourceHash = createHash("sha256").update(readFileSync(source)).digest("hex");
+const targetHash = createHash("sha256").update(readFileSync(target)).digest("hex");
+if (statSync(source).size !== statSync(target).size || sourceHash !== targetHash) {
+  throw new Error("entry.png copy failed verification: output differs from source");
+}
+console.log(`wrote ${target} (${statSync(target).size} bytes, sha256 ${targetHash.slice(0, 12)}…)`);
